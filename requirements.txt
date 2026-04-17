@@ -1,0 +1,12 @@
+# Core interpretability + model tooling
+transformers>=4.30.0
+accelerate>=0.21.0
+datasets>=2.12.0
+scikit-learn>=1.2.0
+transformer_lens>=0.3.5
+einops>=0.6.0
+jaxtyping>=0.2.0
+python-dotenv>=1.0.0
+huggingface_hub>=0.16.4
+
+# NOTE: Install a matching PyTorch wheel separately (see README)
