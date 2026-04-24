@@ -1,3 +1,7 @@
+# LEGACY: This is an early proof-of-concept extraction script from the
+# prototype dataloader flow. The current repo path is
+# `run_refusal_extraction.py`, which incrementally caches XSTest activations and
+# packages vectors for the newer intervention pipeline.
 """Run the model with a cache and extract residual-stream vectors h^{(l)} for the final token.
 
 Saves a small pickle of per-layer final-token vectors for each batch processed.
@@ -5,11 +9,16 @@ Saves a small pickle of per-layer final-token vectors for each batch processed.
 import os
 import re
 import pickle
+import sys
 from dotenv import load_dotenv
 import torch
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
 from setup_model import load_model
-from data_prep import prepare_dataloader
+from legacy.data_prep import prepare_dataloader
 
 
 def extract_layer_index(key: str) -> int:

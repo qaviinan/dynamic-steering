@@ -1,3 +1,6 @@
+# LEGACY: This helper belongs to the early paired-prompt prototype path.
+# The current workflow uses XSTest CSV formatting plus the incremental caching
+# pipeline in `run_refusal_extraction.py` instead of this dataloader wrapper.
 """Contrastive dataset + DataLoader helpers for left-padded chat inputs.
 
 Provides a `ContrastiveDataset` and `prepare_dataloader(model, pos_prompts, neg_prompts)`.
@@ -45,6 +48,13 @@ def prepare_dataloader(model, pos_prompts, neg_prompts, batch_size: int = 2):
 
 if __name__ == "__main__":
     # demo usage
+    import os
+    import sys
+
+    ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if ROOT_DIR not in sys.path:
+        sys.path.append(ROOT_DIR)
+
     from setup_model import load_model
 
     model = load_model()

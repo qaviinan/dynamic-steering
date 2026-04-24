@@ -1,4 +1,10 @@
-"""Steering vector intervention test.
+"""LEGACY TEST: exercises the older abliterated-model single-layer steering path.
+
+This remains in `tests/` for reference, but the current repo workflow centers
+on `run_refusal_extraction.py`, `train_probe.py`, and the extraction/intervention
+ideas described in `guide/how-to-abliterate.md`.
+
+Steering vector intervention test.
 
 Compares model responses on one safe and one unsafe prompt from the full dataset:
   Control:   abliterated model, no hook

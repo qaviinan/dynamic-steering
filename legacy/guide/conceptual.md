@@ -1,3 +1,6 @@
+<!-- LEGACY: This guide captures the earlier single-layer / probe-gated steering
+workflow. It is preserved for historical context, but `guide/how-to-abliterate.md`
+is now the core reference for the current extraction strategy. -->
 The foundation of this project lies in manipulating the geometry of a Transformer's internal representations. The core premise is the **Linear Representation Hypothesis**, which states that large language models encode high-level semantic concepts (such as "harmfulness," "politeness," or "truthfulness") as linear directions—specific vectors—within their high-dimensional activation space. 
 
 To execute conditional steering, you must understand how to locate these vectors, measure their presence, and mathematically inject them into the model's forward pass.

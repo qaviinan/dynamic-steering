@@ -1,3 +1,7 @@
+# LEGACY: This is an older one-off weight-delta SVD experiment from the
+# abliterated-model era. It is preserved as historical reference, but the
+# current workflow extracts refusal vectors from activations via
+# `run_refusal_extraction.py`.
 import torch
 from transformers import AutoModelForCausalLM
 

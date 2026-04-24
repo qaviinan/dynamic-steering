@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# LEGACY: This script represents the older abliterated-model extraction path.
+# It was kept for reference after the repo pivoted to using
+# `run_refusal_extraction.py` plus `guide/how-to-abliterate.md` as the primary
+# extraction path and reference.
 """Incremental steering vector extraction pipeline.
 
 Source: data/xstest_full.csv  (every XSTest prompt, one row each, with
@@ -44,6 +48,10 @@ from datetime import datetime, timezone
 
 import numpy as np
 from dotenv import load_dotenv
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
 
 from model_utils import load_model
 from data.format_xstest import load_and_save_full_dataset, load_full_dataset

@@ -1,30 +1,36 @@
 """Cache final-token residual-stream activations for a list of prompts.
 
-Provides utilities to extract activations for a specific layer index and save
-them for later use.
+Captures all three residual stream hook points per layer:
+  hook_resid_pre  — before attention
+  hook_resid_mid  — between attention and MLP
+  hook_resid_post — after MLP
+
+Callers (e.g. run_refusal_extraction.py) can then select among stream types
+when ranking candidate refusal directions.
 """
 import os
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
 from tqdm import tqdm
 
-from model_utils import find_resid_keys, get_layer_key, generate_response
+from model_utils import generate_response
+
+# Canonical ordering for the stream-type axis of cached arrays.
+STREAM_TYPES: Tuple[str, ...] = ("resid_pre", "resid_mid", "resid_post")
 
 
 def generate_and_cache_prompt(model, prompt: str, max_new_tokens: int = 64):
     """Causally extract prompt-final activations, then generate a response.
 
-    Steps:
-    1) Run `run_with_cache()` on the prompt tokens only and extract the
-       prompt-final residual-stream activations (post-LN keys).
-    2) Free the cache and GPU memory.
-    3) Generate the model response (deterministic by default) for logging.
+    Captures hook_resid_pre, hook_resid_mid, and hook_resid_post for every
+    layer (last prompt token only). If a stream type is absent for a given
+    architecture the dict simply won't contain its keys.
 
-    Returns: (response_str, per_layer_dict, ordered_keys)
-      - per_layer_dict: {key: np.array(d_model)}
-      - ordered_keys: list of keys (same order used to build arrays)
+    Returns: (response_str, per_layer_dict, resid_keys)
+      - per_layer_dict: {hook_key: np.array([d_model])}  one entry per layer per stream type
+      - resid_keys:     list of the captured hook key strings
     """
     device = None
     try:
@@ -32,12 +38,13 @@ def generate_and_cache_prompt(model, prompt: str, max_new_tokens: int = 64):
     except Exception:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Tokenize prompt only so we capture h_T^{(l)} (final prompt token)
     tokens = model.to_tokens([prompt], prepend_bos=True).to(device)
 
-    # run_with_cache can return (logits, cache) or an object with .cache
     try:
-        logits, cache = model.run_with_cache(tokens)
+        logits, cache = model.run_with_cache(
+            tokens,
+            names_filter=lambda name: any(st in name for st in STREAM_TYPES),
+        )
     except Exception:
         out = model.run_with_cache(tokens)
         if isinstance(out, tuple) and len(out) == 2:
@@ -49,35 +56,42 @@ def generate_and_cache_prompt(model, prompt: str, max_new_tokens: int = 64):
     if cache is None:
         raise RuntimeError("run_with_cache did not return a cache object")
 
-    # Prefer post-LN residual stream keys for steering
-    resid_keys = [k for k in cache.keys() if "resid_post" in k]
+    resid_keys = [k for k in cache.keys() if any(st in k for st in STREAM_TYPES)]
 
-    per_layer = {}
+    per_layer: Dict[str, np.ndarray] = {}
     for k in resid_keys:
-        t = cache[k]  # expected shape [B, T, d_model]
+        t = cache[k]
         if not isinstance(t, torch.Tensor):
             t = torch.tensor(t)
-        # batch 0, final token of prompt
         per_layer[k] = t[0, -1, :].detach().cpu().numpy()
 
-    # free the cache before generating to avoid holding both cache + generation KV
-    del cache
-    del logits
+    del cache, logits
     try:
         torch.cuda.empty_cache()
     except Exception:
         pass
 
-    # generate the response deterministically for logging
     response = generate_response(model, prompt, max_new_tokens=max_new_tokens, temperature=0.0)
-
     return response, per_layer, resid_keys
 
 
-def get_activations_for_prompts(model, prompts: List[str], layer_idx: int = 14, batch_size: int = 8) -> np.ndarray:
-    """Return an array of final-token activations for `prompts` at `layer_idx`.
+def get_activations_for_prompts(
+    model,
+    prompts: List[str],
+    layer_idx: int = 14,
+    stream_type: str = "resid_post",
+    batch_size: int = 8,
+) -> np.ndarray:
+    """Return final-token activations for `prompts` at one (layer_idx, stream_type) pair.
 
     Output shape: [len(prompts), d_model]
+
+    Args:
+        model:       HookedTransformer.
+        prompts:     Pre-formatted prompt strings.
+        layer_idx:   Which layer to read from (0-indexed).
+        stream_type: One of STREAM_TYPES ("resid_pre", "resid_mid", "resid_post").
+        batch_size:  Prompts per forward pass.
     """
     device = None
     try:
@@ -85,34 +99,40 @@ def get_activations_for_prompts(model, prompts: List[str], layer_idx: int = 14, 
     except Exception:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    all_acts = []
-    with torch.no_grad():
-        for i in tqdm(range(0, len(prompts), batch_size)):
-            batch_texts = prompts[i : i + batch_size]
-            tokens = model.to_tokens(batch_texts, prepend_bos=True)
-            tokens = tokens.to(device)
+    hook_key = f"blocks.{layer_idx}.hook_{stream_type}"
 
-            out = model.run_with_cache(tokens)
+    all_acts: List[np.ndarray] = []
+    with torch.no_grad():
+        for i in tqdm(range(0, len(prompts), batch_size), desc="Activations"):
+            batch = prompts[i : i + batch_size]
+            tokens = model.to_tokens(batch, prepend_bos=True).to(device)
+
+            out = model.run_with_cache(
+                tokens,
+                names_filter=lambda name: name == hook_key,
+            )
             cache = getattr(out, "cache", None)
             if cache is None and isinstance(out, tuple) and len(out) == 2:
                 _, cache = out
-
             if cache is None:
                 raise RuntimeError("run_with_cache did not return a cache object")
 
-            resid_keys = find_resid_keys(cache)
-            key = get_layer_key(cache, layer_idx)
-            if key is None:
-                raise RuntimeError("Could not find residual-stream key in cache")
+            if hook_key not in cache:
+                # Fallback: take the first resid key at this layer
+                fallback = [k for k in cache.keys() if f"blocks.{layer_idx}" in k]
+                if not fallback:
+                    raise RuntimeError(
+                        f"No cache key found for layer {layer_idx}  stream={stream_type}"
+                    )
+                hook_key_used = fallback[0]
+            else:
+                hook_key_used = hook_key
 
-            t = cache[key]
+            t = cache[hook_key_used]
             if not isinstance(t, torch.Tensor):
                 t = torch.tensor(t)
+            all_acts.append(t[:, -1, :].detach().cpu().numpy())
 
-            final_token_activations = t[:, -1, :].detach().cpu().numpy()
-            all_acts.append(final_token_activations)
-
-            # cleanup
             del cache
             try:
                 torch.cuda.empty_cache()

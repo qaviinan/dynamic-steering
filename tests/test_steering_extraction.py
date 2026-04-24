@@ -1,4 +1,10 @@
-"""End-to-end steering extraction smoke test.
+"""LEGACY TEST: exercises the older matched-pair / steering-extraction path.
+
+This remains in `tests/` for reference, but the current repo workflow is based
+on `run_refusal_extraction.py` plus the extraction strategy documented in
+`guide/how-to-abliterate.md`.
+
+End-to-end steering extraction smoke test.
 
 Steps:
 - Load / format XSTest (saved to `data/matched_xstest_prompts.csv`).
